@@ -63,7 +63,10 @@ public class PropertyReader {
 
 	/**
 	 * Loads properties from dmtools.env file.
-	 * First tries project root, then falls back to current working directory.
+	 * Priority order:
+	 * 1. DMTOOLS_ENV environment variable (explicit path)
+	 * 2. Project root directory
+	 * 3. Current working directory
 	 * This is called lazily on first access.
 	 */
 	private static void loadEnvFileProperties() {
@@ -72,6 +75,68 @@ public class PropertyReader {
 		}
 		
 		envFileProps = new Properties();
+		
+		// Priority 0: Check DMTOOLS_ENV (system property first, then environment variable)
+		// System property has higher priority (can be set via -DDMTOOLS_ENV=path)
+		String dmtoolsEnvPath = System.getProperty("DMTOOLS_ENV");
+		if (dmtoolsEnvPath == null || dmtoolsEnvPath.trim().isEmpty()) {
+			dmtoolsEnvPath = System.getenv("DMTOOLS_ENV");
+		}
+		
+		// Enhanced debugging for credential loading
+		System.out.println("[PropertyReader] ===== Credential Loading Debug =====");
+		System.out.println("[PropertyReader] System property DMTOOLS_ENV: " + System.getProperty("DMTOOLS_ENV"));
+		System.out.println("[PropertyReader] Environment variable DMTOOLS_ENV: " + System.getenv("DMTOOLS_ENV"));
+		System.out.println("[PropertyReader] user.dir: " + System.getProperty("user.dir"));
+		
+		if (dmtoolsEnvPath != null && !dmtoolsEnvPath.trim().isEmpty()) {
+			Path envFile = Paths.get(dmtoolsEnvPath.trim());
+			
+			// Convert to absolute path if relative
+			if (!envFile.isAbsolute()) {
+				String currentDir = System.getProperty("user.dir");
+				if (currentDir != null) {
+					envFile = Paths.get(currentDir).resolve(envFile).normalize();
+					System.out.println("[PropertyReader] Converted relative path to absolute: " + envFile);
+				}
+			}
+			
+			System.out.println("[PropertyReader] Resolved path: " + envFile.toAbsolutePath());
+			System.out.println("[PropertyReader] Path exists: " + Files.exists(envFile));
+			System.out.println("[PropertyReader] Path is regular file: " + Files.isRegularFile(envFile));
+			System.out.println("[PropertyReader] DMTOOLS_ENV found: " + dmtoolsEnvPath);
+			logger.info("DMTOOLS_ENV found (system property or env var): {}", dmtoolsEnvPath);
+			if (Files.exists(envFile) && Files.isRegularFile(envFile)) {
+				try {
+					Map<String, String> envVars = CommandLineUtils.loadEnvironmentFromFile(envFile.toString());
+					if (!envVars.isEmpty()) {
+						envVars.forEach(envFileProps::setProperty);
+						System.out.println("[PropertyReader] SUCCESS: Loaded " + envVars.size() + " properties from: " + envFile);
+						System.out.println("[PropertyReader] JIRA_BASE_PATH=" + envFileProps.getProperty("JIRA_BASE_PATH"));
+						System.out.println("[PropertyReader] JIRA_EMAIL=" + envFileProps.getProperty("JIRA_EMAIL"));
+						System.out.println("[PropertyReader] JIRA_API_TOKEN present=" + (envFileProps.getProperty("JIRA_API_TOKEN") != null ? "YES" : "NO"));
+						logger.info("SUCCESS: Loaded {} properties from dmtools.env via DMTOOLS_ENV: {}", envVars.size(), envFile);
+						logger.info("JIRA_BASE_PATH={}, JIRA_EMAIL={}, JIRA_API_TOKEN present={}", 
+							envFileProps.getProperty("JIRA_BASE_PATH"),
+							envFileProps.getProperty("JIRA_EMAIL"),
+							envFileProps.getProperty("JIRA_API_TOKEN") != null ? "YES" : "NO");
+						return;
+					} else {
+						System.out.println("[PropertyReader] WARNING: DMTOOLS_ENV file exists but is empty");
+						logger.warn("DMTOOLS_ENV file exists but is empty or could not be parsed: {}", envFile);
+					}
+				} catch (Exception e) {
+					System.out.println("[PropertyReader] ERROR loading DMTOOLS_ENV: " + e.getMessage());
+					logger.error("Failed to load dmtools.env from DMTOOLS_ENV path {}: {}", envFile, e.getMessage(), e);
+				}
+			} else {
+				System.out.println("[PropertyReader] WARNING: DMTOOLS_ENV file not found: " + envFile);
+				logger.warn("DMTOOLS_ENV specified but file not found: {}", envFile);
+			}
+		} else {
+			System.out.println("[PropertyReader] DMTOOLS_ENV not set");
+			logger.debug("DMTOOLS_ENV not set (checked both system property and environment variable)");
+		}
 		
 		// Priority 1: Try to load from project root directory
 		Path root = findProjectRoot();
@@ -107,10 +172,16 @@ public class PropertyReader {
 			}
 		}
 		
-		logger.debug("dmtools.env not found in project root ({}) or working directory ({})", root, currentDir);
+		logger.debug("dmtools.env not found in DMTOOLS_ENV, project root ({}) or working directory ({})", root, currentDir);
 	}
 
 	public String getValue(String propertyKey) {
+		// Priority 0: Java system properties (from -D flags) - HIGHEST PRIORITY
+		String systemProperty = System.getProperty(propertyKey);
+		if (systemProperty != null && !systemProperty.isEmpty()) {
+			return systemProperty;
+		}
+		
 		if (prop == null) {
 			prop = new Properties();
 			InputStream input = null;

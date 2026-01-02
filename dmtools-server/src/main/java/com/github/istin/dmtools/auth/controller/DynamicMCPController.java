@@ -24,6 +24,8 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 
 
 @RestController
@@ -93,7 +95,50 @@ public class DynamicMCPController {
         return mcpConfigurationResolverService.processToolCall(configId, toolName, arguments, request);
     }
 
+    /**
+     * Health check endpoint for MCP server.
+     */
+    @GetMapping("/health")
+    public org.springframework.http.ResponseEntity<Map<String, Object>> health() {
+        Map<String, Object> response = new HashMap<>();
+        response.put("status", "UP");
+        response.put("service", "dmtools-mcp");
+        response.put("timestamp", System.currentTimeMillis());
+        return org.springframework.http.ResponseEntity.ok(response);
+    }
 
+
+
+    /**
+     * Simple MCP endpoint without configId for Cursor integration.
+     * Uses default configuration resolution.
+     */
+    @PostMapping(value = "/", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter mcpSimplePost(@RequestBody String body, HttpServletRequest request) {
+        logger.info("===== Simple MCP Request (no configId) =====");
+        logRequestAnalysis(request, "default");
+        
+        SseEmitter emitter = new SseEmitter();
+        
+        try {
+            // Resolve default configuration
+            String configId = mcpConfigurationResolverService.resolveDefaultConfigId();
+            logger.info("Resolved default configId: {}", configId);
+            
+            // Delegate to existing stream handler
+            return mcpStreamPost(configId, body, request);
+            
+        } catch (Exception e) {
+            logError("Simple MCP processing", e);
+            try {
+                sendError(emitter, null, -32603, "Internal error: " + e.getMessage());
+            } catch (Exception sendError) {
+                logError("Simple MCP error response", sendError);
+            }
+            emitter.complete();
+            return emitter;
+        }
+    }
 
     @GetMapping(value = "/stream/{configId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter mcpStreamGet(@PathVariable String configId, HttpServletRequest request) {

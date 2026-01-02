@@ -154,13 +154,34 @@ usage() {
     show_banner
     # Check if JAR file exists before calling JobRunner
     if [ -z "$JAR_FILE" ] || [ ! -f "$JAR_FILE" ]; then
-        error "DMTools JAR file not found. Please install DMTools first:
-  curl -fsSL https://raw.githubusercontent.com/IstiN/dmtools/main/install.sh | bash
+        # Detect local source
+        local local_source=""
+        if [ -n "$DMTOOLS_LOCAL_SOURCE" ] && [ -d "$DMTOOLS_LOCAL_SOURCE" ]; then
+            local_source="$DMTOOLS_LOCAL_SOURCE"
+        elif [ -d "$HOME/dmtools" ]; then
+            local_source="$HOME/dmtools"
+        elif [ -d "/c/Users/AndreyPopov/dmtools" ]; then
+            local_source="/c/Users/AndreyPopov/dmtools"
+        fi
+        
+        if [ -n "$local_source" ]; then
+            error "DMTools JAR file not found. Please build the project first:
+  cd $local_source
+  ./gradlew shadowJar
+
+Or install from GitHub:
+  curl -fsSL https://raw.githubusercontent.com/vospr/dmtools/main/install.sh | bash
+
+Note: Java 23 is required for DMTools to run."
+        else
+            error "DMTools JAR file not found. Please install DMTools first:
+  curl -fsSL https://raw.githubusercontent.com/vospr/dmtools/main/install.sh | bash
 
 Or if you're developing locally, build the project first:
   ./gradlew build
 
 Note: Java 23 is required for DMTools to run."
+        fi
     fi
     execute_java_command "java -Dlog4j2.configurationFile=classpath:log4j2-cli.xml -Dlog4j.configuration=log4j2-cli.xml --add-opens java.base/java.lang=ALL-UNNAMED -XX:-PrintWarnings -cp \"$JAR_FILE\" com.github.istin.dmtools.job.JobRunner"
     exit 0
@@ -271,13 +292,34 @@ esac
 
 # Check if JAR file exists
 if [ -z "$JAR_FILE" ] || [ ! -f "$JAR_FILE" ]; then
-    error "DMTools JAR file not found. Please install DMTools first:
-  curl -fsSL https://raw.githubusercontent.com/IstiN/dmtools/main/install.sh | bash
+    # Detect local source
+    local local_source=""
+    if [ -n "$DMTOOLS_LOCAL_SOURCE" ] && [ -d "$DMTOOLS_LOCAL_SOURCE" ]; then
+        local_source="$DMTOOLS_LOCAL_SOURCE"
+    elif [ -d "$HOME/dmtools" ]; then
+        local_source="$HOME/dmtools"
+    elif [ -d "/c/Users/AndreyPopov/dmtools" ]; then
+        local_source="/c/Users/AndreyPopov/dmtools"
+    fi
+    
+    if [ -n "$local_source" ]; then
+        error "DMTools JAR file not found. Please build the project first:
+  cd $local_source
+  ./gradlew shadowJar
+
+Or install from GitHub:
+  curl -fsSL https://raw.githubusercontent.com/vospr/dmtools/main/install.sh | bash
+
+Note: Java 23 is required for DMTools to run."
+    else
+        error "DMTools JAR file not found. Please install DMTools first:
+  curl -fsSL https://raw.githubusercontent.com/vospr/dmtools/main/install.sh | bash
 
 Or if you're developing locally, build the project first:
   ./gradlew build
 
 Note: Java 23 is required for DMTools to run."
+    fi
 fi
 
 # Determine log configuration based on debug mode
