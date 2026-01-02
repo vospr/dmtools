@@ -210,6 +210,50 @@ public class McpCliHandler {
                     arguments.put("data", stdinData);
                 }
                 i++; // Skip next argument as it was consumed
+            } else if ("--file".equals(arg) && i + 1 < args.length) {
+                // Read JSON from file
+                String filePath = args[i + 1];
+                try {
+                    java.nio.file.Path path = java.nio.file.Paths.get(filePath);
+                    byte[] fileBytes = java.nio.file.Files.readAllBytes(path);
+                    // Remove BOM if present and trim whitespace
+                    String fileContent = new String(fileBytes, java.nio.charset.StandardCharsets.UTF_8).trim();
+                    // Remove UTF-8 BOM if present (0xEF 0xBB 0xBF)
+                    if (fileBytes.length >= 3 && fileBytes[0] == (byte)0xEF && fileBytes[1] == (byte)0xBB && fileBytes[2] == (byte)0xBF) {
+                        fileContent = new String(fileBytes, 3, fileBytes.length - 3, java.nio.charset.StandardCharsets.UTF_8).trim();
+                    }
+                    // Remove any leading/trailing whitespace and ensure it starts with {
+                    fileContent = fileContent.trim();
+                    if (!fileContent.startsWith("{")) {
+                        // Try to find the first { character
+                        int firstBrace = fileContent.indexOf('{');
+                        if (firstBrace > 0) {
+                            fileContent = fileContent.substring(firstBrace);
+                        }
+                    }
+                    // Parse JSON (handles both compact and pretty-printed JSON)
+                    JSONObject jsonObj = new JSONObject(fileContent);
+                    jsonObj.keys().forEachRemaining(key -> {
+                        Object value = jsonObj.get(key);
+                        // Handle JSONObject values (like fieldsJson) - keep as JSONObject
+                        if (value instanceof JSONObject) {
+                            arguments.put(key, value);
+                        } else {
+                            arguments.put(key, value);
+                        }
+                    });
+                    logger.debug("Successfully loaded parameters from file: {}", filePath);
+                } catch (java.nio.file.NoSuchFileException e) {
+                    logger.error("File not found: {}", filePath);
+                    throw new IllegalArgumentException("File not found: " + filePath, e);
+                } catch (org.json.JSONException e) {
+                    logger.error("Failed to parse JSON from file: {}", filePath, e);
+                    throw new IllegalArgumentException("Failed to parse JSON from file: " + filePath + ": " + e.getMessage(), e);
+                } catch (Exception e) {
+                    logger.error("Failed to read file: {}", filePath, e);
+                    throw new IllegalArgumentException("Failed to read file: " + filePath + ": " + e.getMessage(), e);
+                }
+                i++; // Skip next argument as it was consumed
             } else if (!arg.startsWith("--")) {
                 // Positional argument - collect for now
                 // Only treat as key=value if it matches pattern: paramName=value (where paramName is valid identifier)

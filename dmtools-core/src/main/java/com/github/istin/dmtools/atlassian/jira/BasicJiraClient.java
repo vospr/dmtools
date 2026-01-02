@@ -7,6 +7,9 @@ import com.github.istin.dmtools.common.tracker.TrackerClient;
 import com.github.istin.dmtools.common.utils.PropertyReader;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.*;
 
 public class BasicJiraClient extends JiraClient<Ticket> {
@@ -52,20 +55,26 @@ public class BasicJiraClient extends JiraClient<Ticket> {
     static {
         PropertyReader propertyReader = new PropertyReader();
         BASE_PATH = propertyReader.getJiraBasePath();
+        System.out.println("[BasicJiraClient] Static init - BASE_PATH: " + (BASE_PATH != null ? BASE_PATH : "NULL"));
         String jiraLoginPassToken = propertyReader.getJiraLoginPassToken();
         if (jiraLoginPassToken == null || jiraLoginPassToken.isEmpty()) {
             String email = propertyReader.getJiraEmail();
             String token = propertyReader.getJiraApiToken();
+            System.out.println("[BasicJiraClient] Static init - Email: " + (email != null ? email : "NULL") + ", Token present: " + (token != null ? "YES" : "NO"));
             if (email != null && token != null) {
                 String credentials = email.trim() + ":" + token.trim();
                 TOKEN = Base64.getEncoder().encodeToString(credentials.getBytes());
+                System.out.println("[BasicJiraClient] Static init - TOKEN created from email:token (length: " + TOKEN.length() + ")");
             } else {
                 TOKEN = jiraLoginPassToken;
+                System.out.println("[BasicJiraClient] Static init - TOKEN from JIRA_LOGIN_PASS_TOKEN: " + (TOKEN != null ? "present" : "NULL"));
             }
         } else {
             TOKEN = jiraLoginPassToken;
+            System.out.println("[BasicJiraClient] Static init - TOKEN from JIRA_LOGIN_PASS_TOKEN: " + (TOKEN != null ? "present (length: " + TOKEN.length() + ")" : "NULL"));
         }
         AUTH_TYPE = propertyReader.getJiraAuthType();
+        System.out.println("[BasicJiraClient] Static init - AUTH_TYPE: " + AUTH_TYPE);
         IS_JIRA_LOGGING_ENABLED = propertyReader.isJiraLoggingEnabled();
         IS_JIRA_CLEAR_CACHE = propertyReader.isJiraClearCache();
         IS_JIRA_WAIT_BEFORE_PERFORM = propertyReader.isJiraWaitBeforePerform();
@@ -93,8 +102,35 @@ public class BasicJiraClient extends JiraClient<Ticket> {
 
     public BasicJiraClient() throws IOException {
         super(BASE_PATH, TOKEN, JIRA_SEARCH_MAX_RESULTS);
+        
+        // #region agent log
+        try {
+            String logLine = String.format("{\"timestamp\":%d,\"location\":\"BasicJiraClient.java:101\",\"message\":\"Constructor after super\",\"data\":{\"basePath\":%s,\"tokenPresent\":%s,\"tokenLength\":%d,\"hypothesisId\":\"C,D\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}\n", System.currentTimeMillis(), BASE_PATH != null ? "\"" + BASE_PATH + "\"" : "null", TOKEN != null ? "true" : "false", TOKEN != null ? TOKEN.length() : 0);
+            Files.write(Paths.get("c:\\.cursor\\debug.log"), logLine.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (Exception e) {}
+        // #endregion agent log
+        
         if (AUTH_TYPE != null) {
-            setAuthType(AUTH_TYPE);
+            // #region agent log
+            try {
+                String logLine = String.format("{\"timestamp\":%d,\"location\":\"BasicJiraClient.java:114\",\"message\":\"Setting AUTH_TYPE\",\"data\":{\"authType\":%s,\"hypothesisId\":\"D\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}\n", System.currentTimeMillis(), AUTH_TYPE != null ? "\"" + AUTH_TYPE + "\"" : "null");
+                Files.write(Paths.get("c:/.cursor/debug.log"), logLine.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            } catch (Exception e) { e.printStackTrace(); }
+            // #endregion agent log
+            
+            // Ensure AUTH_TYPE is capitalized (HTTP standard requires "Basic" not "basic")
+            String normalizedAuthType = AUTH_TYPE.trim();
+            if (normalizedAuthType.equalsIgnoreCase("basic")) {
+                normalizedAuthType = "Basic";
+            }
+            setAuthType(normalizedAuthType);
+            
+            // #region agent log
+            try {
+                String logLine = String.format("{\"timestamp\":%d,\"location\":\"BasicJiraClient.java:123\",\"message\":\"AUTH_TYPE normalized\",\"data\":{\"original\":%s,\"normalized\":%s,\"hypothesisId\":\"D\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}\n", System.currentTimeMillis(), AUTH_TYPE != null ? "\"" + AUTH_TYPE + "\"" : "null", normalizedAuthType != null ? "\"" + normalizedAuthType + "\"" : "null");
+                Files.write(Paths.get("c:/.cursor/debug.log"), logLine.getBytes(), StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            } catch (Exception e) { e.printStackTrace(); }
+            // #endregion agent log
         }
         setLogEnabled(IS_JIRA_LOGGING_ENABLED);
         setWaitBeforePerform(IS_JIRA_WAIT_BEFORE_PERFORM);

@@ -69,6 +69,36 @@ public class McpConfigurationResolverService {
     }
 
     /**
+     * Resolves default configuration ID for simple MCP endpoint.
+     * This method is used when no explicit configId is provided (e.g., Cursor integration).
+     * 
+     * @return The default configuration ID
+     * @throws Exception if no configuration can be resolved
+     */
+    public String resolveDefaultConfigId() throws Exception {
+        // Try to get the first available configuration from any user
+        // In local development mode, this allows Cursor to work without authentication
+        try {
+            // For now, we'll use a special "default" configuration ID
+            // In production, this should be properly configured per user
+            McpConfiguration defaultConfig = mcpConfigurationService.findById("default");
+            if (defaultConfig != null) {
+                logger.info("Using pre-configured default MCP configuration");
+                return "default";
+            }
+        } catch (Exception e) {
+            logger.debug("No default configuration found, will use fallback");
+        }
+        
+        // Fallback: Try to find any available configuration
+        // This is a temporary solution for local development
+        throw new IllegalArgumentException(
+            "No default MCP configuration found. Please configure integrations and create an MCP configuration. " +
+            "For local development, you can use the /mcp/stream/{configId} endpoint with a specific configuration ID."
+        );
+    }
+
+    /**
      * Resolves MCP configuration by config ID and extracts integration details.
      */
     public McpConfigurationResult resolveMcpConfiguration(String configId) throws Exception {

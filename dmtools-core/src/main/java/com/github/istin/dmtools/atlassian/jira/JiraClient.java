@@ -124,6 +124,13 @@ public abstract class JiraClient<T extends Ticket> implements RestClient, Tracke
 
     // NEW: Constructor with logger injection for server-managed mode
     public JiraClient(String basePath, String authorization, Logger logger, int maxResults) throws IOException {
+        // #region agent log
+        try {
+            String logLine = String.format("{\"timestamp\":%d,\"location\":\"JiraClient.java:126\",\"message\":\"Constructor entry\",\"data\":{\"basePath\":%s,\"authorizationPresent\":%s,\"authorizationLength\":%d,\"hypothesisId\":\"C,D\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}\n", System.currentTimeMillis(), basePath != null ? "\"" + basePath + "\"" : "null", authorization != null ? "true" : "false", authorization != null ? authorization.length() : 0);
+            java.nio.file.Files.write(java.nio.file.Paths.get("c:/.cursor/debug.log"), logLine.getBytes(), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception e) {}
+        // #endregion agent log
+        
         this.basePath = basePath;
         this.authorization = authorization;
         this.logger = logger != null ? logger : LogManager.getLogger(JiraClient.class);
@@ -965,7 +972,10 @@ public abstract class JiraClient<T extends Ticket> implements RestClient, Tracke
         fields.set("project", new JSONObject().put("key", project));
         fields.set("summary", summary);
 
-        fields.set("description", description);
+        // Convert plain text description to ADF format for Jira API v3 compatibility
+        if (description != null && !description.isEmpty()) {
+            fields.set("description", convertTextToADF(description));
+        }
 
         IssueType value = new IssueType();
         value.set("name", issueType);
@@ -1582,15 +1592,30 @@ public abstract class JiraClient<T extends Ticket> implements RestClient, Tracke
 
     @Override
     public Request.Builder sign(Request.Builder builder) {
+        // #region agent log
+        String authHeader = authType + " " + authorization;
+        try {
+            String logLine = String.format("{\"timestamp\":%d,\"location\":\"JiraClient.java:1584\",\"message\":\"Authorization header construction\",\"data\":{\"authType\":%s,\"authorizationPresent\":%s,\"authorizationLength\":%d,\"authHeaderLength\":%d,\"authHeaderPreview\":%s,\"hypothesisId\":\"B,D\"},\"sessionId\":\"debug-session\",\"runId\":\"run1\"}\n", System.currentTimeMillis(), authType != null ? "\"" + authType + "\"" : "null", authorization != null ? "true" : "false", authorization != null ? authorization.length() : 0, authHeader.length(), "\"" + (authHeader.length() > 50 ? authHeader.substring(0, 50) + "..." : authHeader) + "\"");
+            java.nio.file.Files.write(java.nio.file.Paths.get("c:/.cursor/debug.log"), logLine.getBytes(), java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception e) {}
+        // #endregion agent log
+        
         return builder
-                .header("Authorization", authType + " " + authorization)
+                .header("Authorization", authHeader)
                 .header("X-Atlassian-Token", "nocheck")
                 .header("Content-Type", "application/json");
     }
 
     @Override
     public String path(String path) {
-        return basePath + "/rest/api/latest/" + path;
+        // Support both old format (basePath without /rest/api) and new format (basePath with /rest/api/X)
+        if (basePath.contains("/rest/api/")) {
+            // New format: basePath already includes /rest/api/X, just append path
+            return basePath + "/" + path;
+        } else {
+            // Old format: basePath is just the domain, use /rest/api/3/ instead of deprecated /rest/api/latest/
+            return basePath + "/rest/api/3/" + path;
+        }
     }
 
     @Override
@@ -2625,5 +2650,75 @@ public abstract class JiraClient<T extends Ticket> implements RestClient, Tracke
             }
         }
         return null;
+    }
+
+    /**
+     * Converts plain text description to Atlassian Document Format (ADF) for Jira API v3 compatibility.
+     * ADF is required for descriptions in Jira REST API v3.
+     * 
+     * @param text Plain text description
+     * @return JSONObject representing ADF document
+     */
+    private JSONObject convertTextToADF(String text) {
+        JSONObject doc = new JSONObject();
+        doc.put("type", "doc");
+        doc.put("version", 1);
+        
+        JSONArray content = new JSONArray();
+        
+        // Split text by newlines and create paragraphs
+        String[] lines = text.split("\n", -1); // -1 to preserve trailing empty lines
+        
+        JSONArray currentParagraphContent = new JSONArray();
+        boolean hasContent = false;
+        
+        for (int i = 0; i < lines.length; i++) {
+            String line = lines[i];
+            
+            if (line.isEmpty()) {
+                // Empty line - end current paragraph and start new one
+                if (hasContent) {
+                    JSONObject paragraph = new JSONObject();
+                    paragraph.put("type", "paragraph");
+                    paragraph.put("content", currentParagraphContent);
+                    content.put(paragraph);
+                    currentParagraphContent = new JSONArray();
+                    hasContent = false;
+                }
+            } else {
+                // Non-empty line - add as text node
+                JSONObject textNode = new JSONObject();
+                textNode.put("type", "text");
+                textNode.put("text", line);
+                currentParagraphContent.put(textNode);
+                hasContent = true;
+                
+                // Add hard break if not the last line and next line is not empty
+                if (i < lines.length - 1 && !lines[i + 1].isEmpty()) {
+                    JSONObject hardBreak = new JSONObject();
+                    hardBreak.put("type", "hardBreak");
+                    currentParagraphContent.put(hardBreak);
+                }
+            }
+        }
+        
+        // Add final paragraph if there's content
+        if (hasContent) {
+            JSONObject paragraph = new JSONObject();
+            paragraph.put("type", "paragraph");
+            paragraph.put("content", currentParagraphContent);
+            content.put(paragraph);
+        }
+        
+        // If no content at all, add empty paragraph
+        if (content.length() == 0) {
+            JSONObject paragraph = new JSONObject();
+            paragraph.put("type", "paragraph");
+            paragraph.put("content", new JSONArray());
+            content.put(paragraph);
+        }
+        
+        doc.put("content", content);
+        return doc;
     }
 }
