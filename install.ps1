@@ -1,6 +1,7 @@
 # DMTools CLI Installation Script for Windows PowerShell
-# Usage: Invoke-RestMethod -Uri 'https://github.com/IstiN/dmtools/releases/latest/download/install.ps1' | Invoke-Expression
-# Or: irm https://github.com/IstiN/dmtools/releases/latest/download/install.ps1 | iex (PowerShell 5.1+)
+# Usage (local): .\install.ps1
+# Usage (remote): Invoke-RestMethod -Uri 'https://github.com/vospr/dmtools/releases/latest/download/install.ps1' | Invoke-Expression
+# Or: irm https://github.com/vospr/dmtools/releases/latest/download/install.ps1 | iex (PowerShell 5.1+)
 # Requirements: Java 23 (will attempt automatic installation)
 
 $ErrorActionPreference = "Stop"
@@ -24,7 +25,23 @@ function Write-Error-Message {
 }
 
 # Configuration
-$REPO = "IstiN/dmtools"
+# Local source detection - check for local dmtools directory
+$LOCAL_SOURCE = $null
+$USE_LOCAL = $false
+
+if ($env:DMTOOLS_LOCAL_SOURCE -and (Test-Path $env:DMTOOLS_LOCAL_SOURCE)) {
+    $LOCAL_SOURCE = $env:DMTOOLS_LOCAL_SOURCE
+    $USE_LOCAL = $true
+} elseif (Test-Path "$env:USERPROFILE\dmtools") {
+    $LOCAL_SOURCE = "$env:USERPROFILE\dmtools"
+    $USE_LOCAL = $true
+} elseif (Test-Path "C:\Users\AndreyPopov\dmtools") {
+    $LOCAL_SOURCE = "C:\Users\AndreyPopov\dmtools"
+    $USE_LOCAL = $true
+}
+
+# Repository configuration - use vospr/dmtools for releases, local for development
+$REPO = "vospr/dmtools"
 $INSTALL_DIR = "$env:USERPROFILE\.dmtools"
 $BIN_DIR = "$INSTALL_DIR\bin"
 $JAR_PATH = "$INSTALL_DIR\dmtools.jar"
@@ -213,14 +230,39 @@ function Download-DMTools {
     # Download shell script and create Windows wrapper
     $tempScript = "$env:TEMP\dmtools.sh"
     
-    # Try release asset first, fallback to repository
-    if (-not (Download-File -Url $scriptUrl -Output $tempScript -Description "DMTools shell script" -Validate)) {
-        Write-Warn "dmtools.sh not found in release assets (this is normal if not included in release)."
-        if (-not (Download-ScriptFromRepo -Version $Version)) {
-            Write-Error-Message "Failed to download dmtools.sh from both release assets and repository.
+    # Check for local script first (for local development)
+    if ($USE_LOCAL -and $LOCAL_SOURCE) {
+        $localScript = Join-Path $LOCAL_SOURCE "dmtools.sh"
+        if (Test-Path $localScript) {
+            Write-Progress-Message "Using local dmtools.sh from: $localScript"
+            Copy-Item -Path $localScript -Destination $tempScript -Force
+            Write-Info "Copied local script to $tempScript"
+        } else {
+            # Fallback to download
+            # Try release asset first, fallback to repository
+            if (-not (Download-File -Url $scriptUrl -Output $tempScript -Description "DMTools shell script" -Validate)) {
+                Write-Warn "dmtools.sh not found in release assets (this is normal if not included in release)."
+                if (-not (Download-ScriptFromRepo -Version $Version)) {
+                    Write-Error-Message "Failed to download dmtools.sh from both release assets and repository.
+
+Please ensure dmtools.sh is included in the GitHub release, or download it manually from:
+  https://raw.githubusercontent.com/$REPO/main/dmtools.sh
+
+Or if developing locally:
+  Copy-Item $LOCAL_SOURCE\dmtools.sh $tempScript"
+                }
+            }
+        }
+    } else {
+        # Try release asset first, fallback to repository
+        if (-not (Download-File -Url $scriptUrl -Output $tempScript -Description "DMTools shell script" -Validate)) {
+            Write-Warn "dmtools.sh not found in release assets (this is normal if not included in release)."
+            if (-not (Download-ScriptFromRepo -Version $Version)) {
+                Write-Error-Message "Failed to download dmtools.sh from both release assets and repository.
 
 Please ensure dmtools.sh is included in the GitHub release, or download it manually from:
   https://raw.githubusercontent.com/$REPO/main/dmtools.sh"
+            }
         }
     }
     
@@ -324,7 +366,12 @@ function Print-Instructions {
     Write-Host "     `$env:JIRA_API_TOKEN='your-jira-api-token'"
     Write-Host "     `$env:JIRA_BASE_PATH='https://your-domain.atlassian.net'"
     Write-Host ""
-    Write-Host "For more information, visit: https://github.com/$REPO"
+    if ($USE_LOCAL -and $LOCAL_SOURCE) {
+        Write-Host "For more information, visit: $LOCAL_SOURCE"
+        Write-Host "  Local development: cd $LOCAL_SOURCE; .\gradlew.bat shadowJar"
+    } else {
+        Write-Host "For more information, visit: https://github.com/$REPO"
+    }
 }
 
 # Main installation function

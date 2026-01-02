@@ -1,6 +1,7 @@
 #!/bin/bash
 # DMTools CLI Installation Script
-# Usage: curl -fsSL https://raw.githubusercontent.com/IstiN/dmtools/main/install.sh | bash
+# Usage (local): ./install.sh
+# Usage (remote): curl -fsSL https://raw.githubusercontent.com/vospr/dmtools/main/install.sh | bash
 # Requirements: Java 23 (will attempt automatic installation on macOS/Linux)
 
 set -e
@@ -13,7 +14,28 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Configuration
-REPO="IstiN/dmtools"
+# Local source detection - check for local dmtools directory
+if [ -n "$DMTOOLS_LOCAL_SOURCE" ] && [ -d "$DMTOOLS_LOCAL_SOURCE" ]; then
+    LOCAL_SOURCE="$DMTOOLS_LOCAL_SOURCE"
+    USE_LOCAL=true
+elif [ -d "$HOME/dmtools" ]; then
+    LOCAL_SOURCE="$HOME/dmtools"
+    USE_LOCAL=true
+elif [ -d "/c/Users/AndreyPopov/dmtools" ]; then
+    LOCAL_SOURCE="/c/Users/AndreyPopov/dmtools"
+    USE_LOCAL=true
+else
+    USE_LOCAL=false
+    LOCAL_SOURCE=""
+fi
+
+# Repository configuration - use vospr/dmtools for releases, local for development
+if [ "$USE_LOCAL" = true ]; then
+    REPO="vospr/dmtools"  # For documentation/fallback URLs
+else
+    REPO="vospr/dmtools"
+fi
+
 INSTALL_DIR="$HOME/.dmtools"
 BIN_DIR="$INSTALL_DIR/bin"
 JAR_PATH="$INSTALL_DIR/dmtools.jar"
@@ -318,7 +340,7 @@ steps:
       java-version: '23'
   - name: Install DMTools CLI
     run: |
-      curl https://github.com/IstiN/dmtools/releases/latest/download/install.sh -fsS | bash"
+      curl https://github.com/vospr/dmtools/releases/latest/download/install.sh -fsS | bash"
         elif [[ "$OSTYPE" == "darwin"* ]]; then
             warn "Java not found. Attempting to install via Homebrew..."
             if command -v brew >/dev/null 2>&1; then
@@ -408,6 +430,13 @@ download_script_from_repo() {
     local version="$1"
     local script_url="https://raw.githubusercontent.com/${REPO}/main/dmtools.sh"
     
+    # Check local source first
+    if [ "$USE_LOCAL" = true ] && [ -n "$LOCAL_SOURCE" ] && [ -f "$LOCAL_SOURCE/dmtools.sh" ]; then
+        progress "Using local dmtools.sh from repository..."
+        cp "$LOCAL_SOURCE/dmtools.sh" "$SCRIPT_PATH"
+        return 0
+    fi
+    
     progress "dmtools.sh not found in release assets, downloading from repository..."
     
     if download_file "$script_url" "$SCRIPT_PATH" "DMTools shell script (from repository)" "true"; then
@@ -429,8 +458,26 @@ download_dmtools() {
     local jar_url="https://github.com/${REPO}/releases/download/${version}/dmtools-${version}-all.jar"
     local script_url="https://github.com/${REPO}/releases/download/${version}/dmtools.sh"
     
-    # Download JAR
-    download_file "$jar_url" "$JAR_PATH" "DMTools JAR"
+    # Check for local JAR first (for local development)
+    if [ "$USE_LOCAL" = true ] && [ -n "$LOCAL_SOURCE" ]; then
+        local local_jar=""
+        # Try to find JAR in local build directory
+        if [ -d "$LOCAL_SOURCE/build/libs" ]; then
+            local_jar=$(find "$LOCAL_SOURCE/build/libs" -name "dmtools-*-all.jar" -o -name "*-all.jar" | head -1)
+        fi
+        
+        if [ -n "$local_jar" ] && [ -f "$local_jar" ]; then
+            progress "Using local JAR from: $local_jar"
+            cp "$local_jar" "$JAR_PATH"
+            info "Copied local JAR to $JAR_PATH"
+        else
+            # Fallback to download
+            download_file "$jar_url" "$JAR_PATH" "DMTools JAR"
+        fi
+    else
+        # Download JAR
+        download_file "$jar_url" "$JAR_PATH" "DMTools JAR"
+    fi
     
     # Download shell script - try multiple methods
     # Method 1: Try redirect-based URL (standard GitHub release URL)
@@ -472,6 +519,10 @@ Possible causes:
   
 Please try again later or download manually from:
   https://raw.githubusercontent.com/${REPO}/main/dmtools.sh
+  
+Or if developing locally:
+  cp $LOCAL_SOURCE/dmtools.sh $SCRIPT_PATH
+  chmod +x $SCRIPT_PATH
   
 And place it at: $SCRIPT_PATH"
 }
@@ -555,7 +606,12 @@ print_instructions() {
     echo "System Requirements:"
     echo "  ✓ Java $(java -version 2>&1 | head -n 1 | cut -d'"' -f2) detected"
     echo ""
-    echo "For more information, visit: https://github.com/${REPO}"
+    if [ "$USE_LOCAL" = true ]; then
+        echo "For more information, visit: ${LOCAL_SOURCE}"
+        echo "  Local development: cd ${LOCAL_SOURCE} && ./gradlew shadowJar"
+    else
+        echo "For more information, visit: https://github.com/${REPO}"
+    fi
 }
 
 # Main installation function
