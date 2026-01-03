@@ -110,33 +110,48 @@ jobs:
           SCRIPT_PATH="agents/js/createQuestionsAndAssignForReview.js"
           
           if [ -f "$SCRIPT_PATH" ]; then
+            echo "📄 Script found: $SCRIPT_PATH"
+            echo "📋 Checking current content (before fix):"
+            grep -n "Subtask\|Sub-task" "$SCRIPT_PATH" | head -5 || echo "No 'Subtask' or 'Sub-task' found"
+            
             # Replace all variations of "Subtask" with "Sub-task" (with hyphen)
-            # Handle JSON format: {"name":"Subtask"} or {"name": "Subtask"}
+            # Pattern 1: {"name":"Subtask"} or {"name": "Subtask"} (with or without spaces)
             sed -i 's/"name"\s*:\s*"Subtask"/"name": "Sub-task"/g' "$SCRIPT_PATH"
-            # Handle single quotes: {'name':'Subtask'} or {'name': 'Subtask'}
+            # Pattern 2: {'name':'Subtask'} or {'name': 'Subtask'} (single quotes)
             sed -i "s/'name'\\s*:\\s*'Subtask'/'name': 'Sub-task'/g" "$SCRIPT_PATH"
-            # Handle any remaining standalone "Subtask" in issuetype context
+            # Pattern 3: name: "Subtask" or name:'Subtask' (without quotes around name)
+            sed -i 's/name\s*:\s*"Subtask"/name: "Sub-task"/g' "$SCRIPT_PATH"
+            sed -i "s/name\\s*:\\s*'Subtask'/name: 'Sub-task'/g" "$SCRIPT_PATH"
+            # Pattern 4: Any remaining "Subtask" in issuetype context
             sed -i 's/issuetype.*"Subtask"/issuetype.*"Sub-task"/g' "$SCRIPT_PATH"
             sed -i "s/issuetype.*'Subtask'/issuetype.*'Sub-task'/g" "$SCRIPT_PATH"
+            # Pattern 5: Direct string replacement for any remaining instances
+            sed -i 's/"Subtask"/"Sub-task"/g' "$SCRIPT_PATH"
+            sed -i "s/'Subtask'/'Sub-task'/g" "$SCRIPT_PATH"
             
-            echo "✅ Fixed issue type name in $SCRIPT_PATH"
-            echo "Verifying change:"
+            echo ""
+            echo "✅ Applied sed replacements"
+            echo "📋 Verifying change (after fix):"
             if grep -q "Sub-task" "$SCRIPT_PATH"; then
               echo "✅ Found 'Sub-task' in script:"
-              grep -n "Sub-task" "$SCRIPT_PATH" | head -3
+              grep -n "Sub-task" "$SCRIPT_PATH" | head -5
+            else
+              echo "⚠️  No 'Sub-task' found after replacement"
             fi
-            # Check for remaining "Subtask" (without hyphen) - check both double and single quotes separately
-            if grep -q '"Subtask"' "$SCRIPT_PATH" || grep -q "'Subtask'" "$SCRIPT_PATH"; then
+            # Check for remaining "Subtask" (without hyphen)
+            if grep -q '"Subtask"\|'"'"'Subtask'"'"' "$SCRIPT_PATH"; then
               echo "⚠️  Warning: Still found 'Subtask' (without hyphen):"
-              grep -n '"Subtask"' "$SCRIPT_PATH" | head -3 || true
-              grep -n "'Subtask'" "$SCRIPT_PATH" | head -3 || true
+              grep -n '"Subtask"\|'"'"'Subtask'"'"' "$SCRIPT_PATH" | head -5
             else
               echo "✅ No 'Subtask' (without hyphen) found - all replaced!"
             fi
           else
             echo "⚠️  Script not found: $SCRIPT_PATH"
+            echo "Current directory: $(pwd)"
             echo "Available scripts in agents/js/:"
             ls -la agents/js/*.js 2>/dev/null || echo "No JS files found"
+            echo "Checking if agents/js/ exists:"
+            ls -la agents/js/ 2>/dev/null || echo "agents/js/ directory not found"
           fi
       
       # Step 7: Create dmtools.env from GitHub Secrets - CRITICAL FIX
