@@ -7,6 +7,10 @@ on:
         description: 'Path to agent config (relative to original repo or your repo)'
         required: true
         default: 'agents/story_questions.json'
+      ticket_key:
+        description: 'Jira ticket key (e.g., ATL-1) - will be used to create encoded_config if provided'
+        required: false
+        type: string
       encoded_config:
         description: 'Base64-encoded JSON with dynamic params (ticket_key, initiator, etc.)'
         required: false
@@ -283,6 +287,7 @@ jobs:
         env:
           PATH: "/home/runner/.local/bin:/home/runner/.dmtools/bin:/bin:/usr/bin:$PATH"
           ENCODED_CONFIG: ${{ inputs.encoded_config }}
+          TICKET_KEY: ${{ inputs.ticket_key }}
         run: |
           CONFIG_FILE="${{ inputs.config_file }}"
           echo "🚀 Running AI Teammate with config: $CONFIG_FILE"
@@ -305,12 +310,21 @@ jobs:
             exit 1
           fi
           
+          # If ticket_key is provided but no encoded_config, create it
+          if [ -n "${TICKET_KEY}" ] && [ -z "${ENCODED_CONFIG}" ]; then
+            echo "📋 Creating encoded_config from ticket_key: ${TICKET_KEY}"
+            # Create JSON and Base64 encode it
+            JSON_CONFIG="{\"ticket_key\":\"${TICKET_KEY}\"}"
+            ENCODED_CONFIG=$(echo -n "${JSON_CONFIG}" | base64 -w 0)
+            echo "✅ Encoded config created (length: ${#ENCODED_CONFIG} characters)"
+            echo "   JSON: ${JSON_CONFIG}"
+          fi
+          
           # Run dmtools
           if [ -n "${ENCODED_CONFIG}" ]; then
-            echo "Encoded config provided"
-            echo "Encoded config length: ${#ENCODED_CONFIG} characters"
+            echo "📤 Using encoded config (length: ${#ENCODED_CONFIG} characters)"
             dmtools run "$CONFIG_FILE" "${ENCODED_CONFIG}"
           else
-            echo "No encoded config, using defaults from config file"
+            echo "⚠️  No encoded config and no ticket_key provided, using defaults from config file"
             dmtools run "$CONFIG_FILE"
           fi
