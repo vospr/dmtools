@@ -47,7 +47,7 @@ public class TestCasesGenerator extends AbstractJob<TestCasesGeneratorParams, Li
     @AllArgsConstructor
     @Getter
     @Setter
-    public class TestCasesResult {
+    public static class TestCasesResult {
         private String key;
         private List<ITicket> similarTestCases;
         private List<TestCaseGeneratorAgent.TestCase> newTestCases;
@@ -124,14 +124,20 @@ public class TestCasesGenerator extends AbstractJob<TestCasesGeneratorParams, Li
                 ticketContext.prepareContext(false, params.isIncludeOtherTicketReferences());
                 String additionalRules = extractFromConfluence(params.getConfluencePages());
                 result.add(generateTestCases(ticketContext, additionalRules, listOfAllTestCases, params));
-                trackerClient.postCommentIfNotExists(ticket.getTicketKey(), trackerClient.tag(params.getInitiator()) + ", similar test cases are linked and new test cases are generated.");
+                TrackerParams.OutputType outputType = params.getOutputType();
+                if (!outputType.equals(TrackerParams.OutputType.none)) {
+                    trackerClient.postCommentIfNotExists(ticket.getTicketKey(), trackerClient.tag(params.getInitiator()) + ", similar test cases are linked and new test cases are generated.");
+                }
             } catch (Exception e) {
                 String errorMessage = String.format("%s, test case generation failed with error: %s\n\nStack trace:\n%s", 
                     trackerClient.tag(params.getInitiator()),
                     e.getMessage() != null ? e.getMessage() : e.getClass().getSimpleName(),
                     getStackTraceAsString(e));
                 try {
-                    trackerClient.postComment(ticket.getTicketKey(), errorMessage);
+                    TrackerParams.OutputType outputType = params.getOutputType();
+                    if (!outputType.equals(TrackerParams.OutputType.none)) {
+                        trackerClient.postComment(ticket.getTicketKey(), errorMessage);
+                    }
                 } catch (Exception commentException) {
                     System.err.println("Failed to post error comment to ticket " + ticket.getTicketKey() + ": " + commentException.getMessage());
                 }
@@ -161,8 +167,9 @@ public class TestCasesGenerator extends AbstractJob<TestCasesGeneratorParams, Li
         String key = mainTicket.getTicketKey();
         String ticketText = ticketContext.toText();
         String existingRelationship = resolveRelationshipForExisting(params);
+        List<? extends ITicket> currentlyLinked = trackerClient.getTestCases(mainTicket, params.getTestCaseIssueType());
         List<ITicket> finaResults = params.isFindRelated()
-                ? findAndLinkSimilarTestCasesBySummary(ticketContext.getTicket().getTicketKey(), ticketText, listOfAllTestCases, params.isLinkRelated(), params.getRelatedTestCasesRules(), existingRelationship)
+                ? findAndLinkSimilarTestCasesBySummary(ticketContext.getTicket().getTicketKey(), ticketText, listOfAllTestCases, params.isLinkRelated(), params.getRelatedTestCasesRules(), existingRelationship, currentlyLinked)
                 : Collections.emptyList();
 
         // Initialize accumulator for all generated test cases
@@ -239,7 +246,8 @@ public class TestCasesGenerator extends AbstractJob<TestCasesGeneratorParams, Li
         
         TestCasesResult testCasesResult = new TestCasesResult(ticketContext.getTicket().getKey(), finaResults, newTestCases);
 
-        if (params.getOutputType().equals(TrackerParams.OutputType.comment)) {
+        TrackerParams.OutputType outputType = params.getOutputType();
+        if (outputType.equals(TrackerParams.OutputType.comment)) {
             StringBuilder result = new StringBuilder();
             for (TestCaseGeneratorAgent.TestCase testCase : newTestCases) {
                 result.append("Summary: ").append(testCase.getSummary()).append("<br>");
@@ -247,19 +255,21 @@ public class TestCasesGenerator extends AbstractJob<TestCasesGeneratorParams, Li
                 result.append("Description: ").append(StringUtils.convertToMarkdown(testCase.getDescription())).append("<br>");
             }
             trackerClient.postComment(key, result.toString());
-        } else {
+        } else if (outputType.equals(TrackerParams.OutputType.creation)) {
             String newTestCaseRelationship = resolveRelationshipForNew(params);
             for (TestCaseGeneratorAgent.TestCase testCase : newTestCases) {
-                // Get project code: for ADO use getProject(), for Jira use key.split("-")[0]
-                String projectCode;
-                if (mainTicket instanceof WorkItem) {
-                    projectCode = ((WorkItem) mainTicket).getProject();
-                    if (projectCode == null || projectCode.isEmpty()) {
-                        throw new IOException("Unable to determine project from ADO work item " + key);
+                // Get project code: use targetProject if provided, otherwise extract from mainTicket
+                String projectCode = params.getTargetProject();
+                if (!isNotBlank(projectCode)) {
+                    if (mainTicket instanceof WorkItem) {
+                        projectCode = ((WorkItem) mainTicket).getProject();
+                        if (projectCode == null || projectCode.isEmpty()) {
+                            throw new IOException("Unable to determine project from ADO work item " + key);
+                        }
+                    } else {
+                        // Jira format: PROJ-123 -> PROJ
+                        projectCode = key.split("-")[0];
                     }
-                } else {
-                    // Jira format: PROJ-123 -> PROJ
-                    projectCode = key.split("-")[0];
                 }
                 String description = testCase.getDescription();
                 if (params.isConvertToJiraMarkdown()) {
@@ -527,7 +537,7 @@ public class TestCasesGenerator extends AbstractJob<TestCasesGeneratorParams, Li
     }
 
     @NotNull
-    public List<ITicket> findAndLinkSimilarTestCasesBySummary(String ticketKey, String ticketText, List<? extends ITicket> listOfAllTestCases, boolean isLink, String relatedTestCasesRulesLink, String relationship) throws Exception {
+    public List<ITicket> findAndLinkSimilarTestCasesBySummary(String ticketKey, String ticketText, List<? extends ITicket> listOfAllTestCases, boolean isLink, String relatedTestCasesRulesLink, String relationship, List<? extends ITicket> currentlyLinkedTestCases) throws Exception {
         List<ITicket> finaResults = new ArrayList<>();
         String value = confluence.contentByUrl(relatedTestCasesRulesLink).getStorage().getValue();
         String extraRelatedTestCaseRulesFromConfluence;
@@ -556,7 +566,10 @@ public class TestCasesGenerator extends AbstractJob<TestCasesGeneratorParams, Li
                     if (isConfirmed) {
                         finaResults.add(testCase);
                         if (isLink) {
-                            trackerClient.linkIssueWithRelationship(ticketKey, testCase.getKey(), relationship);
+                            boolean isAlreadyLinked = currentlyLinkedTestCases != null && currentlyLinkedTestCases.stream().anyMatch(t -> t.getTicketKey().equals(testCase.getTicketKey()));
+                            if (!isAlreadyLinked) {
+                                trackerClient.linkIssueWithRelationship(ticketKey, testCase.getKey(), relationship);
+                            }
                         }
                     }
                 }
@@ -719,6 +732,9 @@ public class TestCasesGenerator extends AbstractJob<TestCasesGeneratorParams, Li
         try {
             paramsJson.put("testCaseIssueType", params.getTestCaseIssueType());
             paramsJson.put("testCasesPriorities", params.getTestCasesPriorities());
+            if (params.getTargetProject() != null) {
+                paramsJson.put("targetProject", params.getTargetProject());
+            }
             if (params.getInputJql() != null) {
                 paramsJson.put("inputJql", params.getInputJql());
             }

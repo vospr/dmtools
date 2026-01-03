@@ -16,6 +16,7 @@ import com.github.istin.dmtools.di.DaggerMermaidIndexComponent;
 import com.github.istin.dmtools.di.MermaidIndexComponent;
 import com.github.istin.dmtools.figma.BasicFigmaClient;
 import com.github.istin.dmtools.file.FileTools;
+import com.github.istin.dmtools.common.utils.JSONUtils;
 import com.github.istin.dmtools.microsoft.teams.BasicTeamsClient;
 import com.github.istin.dmtools.microsoft.teams.TeamsAuthTools;
 import com.github.istin.dmtools.microsoft.sharepoint.BasicSharePointClient;
@@ -24,6 +25,7 @@ import com.github.istin.dmtools.mcp.generated.MCPToolExecutor;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.config.Configurator;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.IOException;
@@ -116,10 +118,20 @@ public class McpCliHandler {
 
             Object result = MCPToolExecutor.executeTool(toolName, arguments, clientInstances);
             if (result == null) {
-                return "Tool executed successfully but returned no result.";
+                return createErrorResponse("Tool executed successfully but returned no result.");
             }
 
-            return serializeResult(result);
+            String serialized = serializeResult(result);
+            if (serialized.trim().startsWith("{")) {
+                return serialized;
+            }
+            JSONObject response = new JSONObject();
+            if (serialized.trim().startsWith("[")) {
+                response.put("result", new JSONArray(serialized));
+            } else {
+                response.put("result", result);
+            }
+            return response.toString(2);
 
         } catch (IllegalArgumentException e) {
             logger.error("Invalid tool or arguments", e);
@@ -135,40 +147,7 @@ public class McpCliHandler {
      * Handles various result types: JSONModel, List, primitives, etc.
      */
     private String serializeResult(Object result) {
-        if (result == null) {
-            return "null";
-        }
-        
-        // Handle JSONModel objects
-        if (result instanceof com.github.istin.dmtools.common.model.JSONModel) {
-            return result.toString();
-        }
-        
-        // Handle Lists (e.g., List<Chat>)
-        if (result instanceof List) {
-            org.json.JSONArray jsonArray = new org.json.JSONArray();
-            for (Object item : (List<?>) result) {
-                if (item instanceof com.github.istin.dmtools.common.model.JSONModel) {
-                    jsonArray.put(new JSONObject(item.toString()));
-                } else {
-                    jsonArray.put(item);
-                }
-            }
-            return jsonArray.toString(2); // Pretty print with 2-space indent
-        }
-        
-        // Handle primitives and other types
-        if (result instanceof String || result instanceof Number || result instanceof Boolean) {
-            return result.toString();
-        }
-        
-        // Try to convert to JSON object
-        try {
-            return new JSONObject(result.toString()).toString(2);
-        } catch (Exception e) {
-            // Fall back to plain toString
-            return result.toString();
-        }
+        return JSONUtils.serializeResult(result);
     }
 
     /**

@@ -21,6 +21,8 @@ public class BasicJiraClient extends JiraClient<Ticket> {
     private static final boolean IS_JIRA_LOGGING_ENABLED;
     private static final boolean IS_JIRA_CLEAR_CACHE;
 
+    private static final boolean IS_JIRA_TRANSFORM_CUSTOM_FIELDS_TO_NAMES;
+
     private static final boolean IS_JIRA_WAIT_BEFORE_PERFORM;
 
     private static final Long SLEEP_TIME_REQUEST;
@@ -77,6 +79,7 @@ public class BasicJiraClient extends JiraClient<Ticket> {
         System.out.println("[BasicJiraClient] Static init - AUTH_TYPE: " + AUTH_TYPE);
         IS_JIRA_LOGGING_ENABLED = propertyReader.isJiraLoggingEnabled();
         IS_JIRA_CLEAR_CACHE = propertyReader.isJiraClearCache();
+        IS_JIRA_TRANSFORM_CUSTOM_FIELDS_TO_NAMES = propertyReader.isJiraTransformCustomFieldsToNames();
         IS_JIRA_WAIT_BEFORE_PERFORM = propertyReader.isJiraWaitBeforePerform();
         SLEEP_TIME_REQUEST = propertyReader.getSleepTimeRequest();
         JIRA_EXTRA_FIELDS = propertyReader.getJiraExtraFields();
@@ -136,6 +139,8 @@ public class BasicJiraClient extends JiraClient<Ticket> {
         setWaitBeforePerform(IS_JIRA_WAIT_BEFORE_PERFORM);
         setSleepTimeRequest(SLEEP_TIME_REQUEST);
         setClearCache(IS_JIRA_CLEAR_CACHE);
+        setTransformCustomFieldsToNames(IS_JIRA_TRANSFORM_CUSTOM_FIELDS_TO_NAMES);
+        setProjectContext(JIRA_EXTRA_FIELDS_PROJECT);
 
         List<String> defaultFields = new ArrayList<>(Arrays.asList(DEFAULT_QUERY_FIELDS));
 
@@ -196,11 +201,6 @@ public class BasicJiraClient extends JiraClient<Ticket> {
     @Override
     public String[] getExtendedQueryFields() {
         return extendedJiraFields;
-    }
-
-    @Override
-    public List<? extends ITicket> getTestCases(ITicket ticket) throws IOException {
-        return Collections.emptyList();
     }
 
     @Override
