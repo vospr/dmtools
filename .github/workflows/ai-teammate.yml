@@ -102,6 +102,41 @@ jobs:
             exit 1
           fi
       
+      # Step 6.5: Fix Issue Type Name for Jira Sub-tasks
+      - name: Fix Issue Type Name in Post-Processing Script
+        working-directory: original-repo
+        run: |
+          echo "🔧 Fixing issue type name from 'Subtask' to 'Sub-task'..."
+          SCRIPT_PATH="agents/js/createQuestionsAndAssignForReview.js"
+          
+          if [ -f "$SCRIPT_PATH" ]; then
+            # Replace all variations of "Subtask" with "Sub-task" (with hyphen)
+            # Handle JSON format: {"name":"Subtask"} or {"name": "Subtask"}
+            sed -i 's/"name"\s*:\s*"Subtask"/"name": "Sub-task"/g' "$SCRIPT_PATH"
+            # Handle single quotes: {'name':'Subtask'} or {'name': 'Subtask'}
+            sed -i "s/'name'\\s*:\\s*'Subtask'/'name': 'Sub-task'/g" "$SCRIPT_PATH"
+            # Handle any remaining standalone "Subtask" in issuetype context
+            sed -i 's/issuetype.*"Subtask"/issuetype.*"Sub-task"/g' "$SCRIPT_PATH"
+            sed -i "s/issuetype.*'Subtask'/issuetype.*'Sub-task'/g" "$SCRIPT_PATH"
+            
+            echo "✅ Fixed issue type name in $SCRIPT_PATH"
+            echo "Verifying change:"
+            if grep -q "Sub-task" "$SCRIPT_PATH"; then
+              echo "✅ Found 'Sub-task' in script:"
+              grep -n "Sub-task" "$SCRIPT_PATH" | head -3
+            fi
+            if grep -q '"Subtask"\|'"'"'Subtask'"'"' "$SCRIPT_PATH"; then
+              echo "⚠️  Warning: Still found 'Subtask' (without hyphen):"
+              grep -n '"Subtask"\|'"'"'Subtask'"'"' "$SCRIPT_PATH" | head -3
+            else
+              echo "✅ No 'Subtask' (without hyphen) found - all replaced!"
+            fi
+          else
+            echo "⚠️  Script not found: $SCRIPT_PATH"
+            echo "Available scripts in agents/js/:"
+            ls -la agents/js/*.js 2>/dev/null || echo "No JS files found"
+          fi
+      
       # Step 7: Create dmtools.env from GitHub Secrets - CRITICAL FIX
       - name: Create dmtools.env from Your Secrets
         working-directory: original-repo
