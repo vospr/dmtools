@@ -313,11 +313,13 @@ jobs:
           # If ticket_key is provided but no encoded_config, create it
           if [ -n "${TICKET_KEY}" ] && [ -z "${ENCODED_CONFIG}" ]; then
             echo "📋 Creating encoded_config from ticket_key: ${TICKET_KEY}"
-            # Create JSON and Base64 encode it
-            JSON_CONFIG="{\"ticket_key\":\"${TICKET_KEY}\"}"
+            # Create JSON with inputJql format that the agent config expects
+            # The agent config uses inputJql: "key = TP-389", so we override it with our ticket
+            JSON_CONFIG="{\"inputJql\":\"key = ${TICKET_KEY}\"}"
             ENCODED_CONFIG=$(echo -n "${JSON_CONFIG}" | base64 -w 0)
             echo "✅ Encoded config created (length: ${#ENCODED_CONFIG} characters)"
             echo "   JSON: ${JSON_CONFIG}"
+            echo "   This will override the hardcoded inputJql in the agent config"
           fi
           
           # Run dmtools
