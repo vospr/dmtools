@@ -4,17 +4,24 @@ on:
   workflow_dispatch:
     inputs:
       config_file:
-        description: 'Path to config'
+        description: 'Path to agent config (relative to original repo or your repo)'
         required: true
+        default: 'agents/learning_questions.json'
       encoded_config:
-        description: 'Encoded or JSON Agent Config'
+        description: 'Base64-encoded JSON with dynamic params (ticket_key, initiator, etc.)'
         required: false
+        type: string
+      use_your_agent_config:
+        description: 'Use agent config from your repo instead of original'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: write
   pull-requests: write
   actions: read
-  
+
 jobs:
   cursor-agent:
     runs-on: ubuntu-latest
@@ -23,96 +30,286 @@ jobs:
       cancel-in-progress: false
     
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      # Step 1: Checkout ORIGINAL repository (IstiN/dmtools) - CRITICAL FIX
+      - name: Checkout Original Repository
+        uses: actions/checkout@v4
+        with:
+          repository: IstiN/dmtools
+          ref: main
+          path: original-repo
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Step 2: Checkout YOUR repository (for agent configs if needed)
+      - name: Checkout Your Repository
+        if: inputs.use_your_agent_config == true
+        uses: actions/checkout@v4
+        with:
+          path: your-repo
+          sparse-checkout: |
+            agents/
+      
+      # Step 3: Setup Java Environment
+      - name: Setup Java Environment
+        uses: ./.github/actions/setup-java-only
+        with:
+          cache-key-suffix: '-cursor'
 
-    - name: Setup Java Environment
-      uses: ./.github/actions/setup-java-only
-      with:
-        cache-key-suffix: '-cursor'
+      # Step 4: Install Cursor CLI
+      - name: Install Cursor CLI
+        run: |
+          echo "Installing Cursor CLI..."
+          curl https://cursor.com/install -fsS | bash
+          
+          echo "Checking installation locations..."
+          ls -la "$HOME/.cursor/" || echo "No .cursor directory"
+          ls -la "$HOME/.cursor/bin/" || echo "No .cursor/bin directory"
+          ls -la "$HOME/.local/bin/" || echo "No .local/bin directory"
+          
+          # Cursor CLI installs to ~/.local/bin, not ~/.cursor/bin
+          echo "$HOME/.local/bin" >> $GITHUB_PATH
+          
+          # Test installation
+          export PATH="$HOME/.local/bin:$PATH"
+          if command -v cursor-agent; then
+            echo "✅ cursor-agent found at: $(command -v cursor-agent)"
+            cursor-agent --version 2>&1 || echo "Version check failed"
+          else
+            echo "❌ cursor-agent not found after installation"
+            echo "Available files in .local/bin:"
+            ls -la "$HOME/.local/bin/" 2>/dev/null || echo "Directory does not exist"
+          fi
 
-    - name: Install Cursor CLI
-      run: |
-        echo "Installing Cursor CLI..."
-        curl https://cursor.com/install -fsS | bash
-        
-        echo "Checking installation locations..."
-        ls -la "$HOME/.cursor/" || echo "No .cursor directory"
-        ls -la "$HOME/.cursor/bin/" || echo "No .cursor/bin directory"
-        ls -la "$HOME/.local/bin/" || echo "No .local/bin directory"
-        
-        # Cursor CLI installs to ~/.local/bin, not ~/.cursor/bin
-        echo "$HOME/.local/bin" >> $GITHUB_PATH
-        
-        # Test installation
-        export PATH="$HOME/.local/bin:$PATH"
-        if command -v cursor-agent; then
-          echo "✅ cursor-agent found at: $(command -v cursor-agent)"
-          cursor-agent --version 2>&1 || echo "Version check failed"
-        else
-          echo "❌ cursor-agent not found after installation"
-          echo "Available files in .local/bin:"
-          ls -la "$HOME/.local/bin/" 2>/dev/null || echo "Directory does not exist"
-        fi
-
-    - name: Install DMTools CLI
-      run: |
-        curl -fsSL https://raw.githubusercontent.com/IstiN/dmtools/main/install.sh | bash
-        echo "$HOME/.dmtools/bin" >> $GITHUB_PATH
-
-    - name: Build and Install DMTools CLI from source
-      run: |
-        dmtools || echo "dmtools version failed"
-        cursor-agent --version || echo "cursor-agent version failed"
-
-    - name: Run AI Teammate
-      env:
-        CURSOR_API_KEY: ${{ secrets.CURSOR_API_KEY }}
-        MODEL: sonnet-4
-        AGENT_DISABLE_WATCHDOG: "1"
-        PATH: "/home/runner/.local/bin:/home/runner/.dmtools/bin:/bin:/usr/bin:$PATH"
-        # Jira Configuration
-        JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
-        JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-        JIRA_BASE_PATH: ${{ vars.JIRA_BASE_PATH }}
-        JIRA_AUTH_TYPE: ${{ vars.JIRA_AUTH_TYPE }}
-        JIRA_CLEAR_CACHE: ${{ vars.JIRA_CLEAR_CACHE }}
-        JIRA_EXTRA_FIELDS: ${{ vars.JIRA_EXTRA_FIELDS }}
-        JIRA_EXTRA_FIELDS_PROJECT: ${{ vars.JIRA_EXTRA_FIELDS_PROJECT }}
-        JIRA_LOGGING_ENABLED: ${{ vars.JIRA_LOGGING_ENABLED }}
-        JIRA_WAIT_BEFORE_PERFORM: ${{ vars.JIRA_WAIT_BEFORE_PERFORM }}
-
-        # Confluence Configuration
-        CONFLUENCE_EMAIL: ${{ secrets.JIRA_EMAIL }}
-        CONFLUENCE_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
-        CONFLUENCE_BASE_PATH: ${{ vars.CONFLUENCE_BASE_PATH }}
-        CONFLUENCE_DEFAULT_SPACE: ${{ vars.CONFLUENCE_DEFAULT_SPACE }}
-        CONFLUENCE_GRAPHQL_PATH: ${{ vars.CONFLUENCE_GRAPHQL_PATH }}
-
-        # DMTools Integration Settings
-        DMTOOLS_INTEGRATIONS: "jira,confluence,figma,ai,cli,file"
-
-        # AI Service Configuration
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        GEMINI_DEFAULT_MODEL: ${{ vars.GEMINI_DEFAULT_MODEL }}
-        PROMPT_CHUNK_TOKEN_LIMIT: ${{ vars.PROMPT_CHUNK_TOKEN_LIMIT }}
-        
-        # Figma Configuration
-        FIGMA_TOKEN: ${{ secrets.FIGMA_TOKEN }}
-        FIGMA_BASE_PATH: ${{ vars.FIGMA_BASE_PATH }}
-        ENCODED_CONFIG: ${{ inputs.encoded_config }}
-        
-        # GitHub Authentication for PR creation
-        PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-        GH_TOKEN: ${{ secrets.PAT_TOKEN }}
-
-      run: |
-        echo "Using configuration: ${{ inputs.config_file }}"
-        if [ -n "${ENCODED_CONFIG}" ]; then
-          echo "Encoded config received (raw):"
-          printf '%s\n' "${ENCODED_CONFIG}"
-          dmtools run "${{ inputs.config_file }}" "${ENCODED_CONFIG}"
-        else
-          echo "No encoded config provided."
-          dmtools run "${{ inputs.config_file }}"
-        fi
+      # Step 5: Install DMTools CLI (from original repo's releases)
+      - name: Install DMTools CLI
+        working-directory: original-repo
+        run: |
+          echo "Installing DMTools CLI from original repository..."
+          curl -fsSL https://raw.githubusercontent.com/IstiN/dmtools/main/install.sh | bash
+          echo "$HOME/.dmtools/bin" >> $GITHUB_PATH
+          
+          # Verify installation
+          export PATH="$HOME/.dmtools/bin:$PATH"
+          if command -v dmtools >/dev/null 2>&1; then
+            echo "✅ dmtools installed"
+            dmtools --version || echo "Version check failed"
+          else
+            echo "❌ dmtools not found"
+            exit 1
+          fi
+      
+      # Step 6: Create dmtools.env from GitHub Secrets - CRITICAL FIX
+      - name: Create dmtools.env from Your Secrets
+        working-directory: original-repo
+        run: |
+          echo "Creating dmtools.env from GitHub Secrets..."
+          
+          # Create dmtools.env with variable placeholders
+          cat > dmtools.env << 'ENV_TEMPLATE'
+          # Jira Configuration
+          JIRA_EMAIL=${JIRA_EMAIL}
+          JIRA_API_TOKEN=${JIRA_API_TOKEN}
+          JIRA_BASE_PATH=${JIRA_BASE_PATH}
+          JIRA_AUTH_TYPE=${JIRA_AUTH_TYPE}
+          JIRA_LOGGING_ENABLED=${JIRA_LOGGING_ENABLED}
+          JIRA_CLEAR_CACHE=${JIRA_CLEAR_CACHE}
+          
+          # Confluence Configuration
+          CONFLUENCE_EMAIL=${CONFLUENCE_EMAIL}
+          CONFLUENCE_API_TOKEN=${CONFLUENCE_API_TOKEN}
+          CONFLUENCE_BASE_PATH=${CONFLUENCE_BASE_PATH}
+          CONFLUENCE_DEFAULT_SPACE=${CONFLUENCE_DEFAULT_SPACE}
+          CONFLUENCE_GRAPHQL_PATH=${CONFLUENCE_GRAPHQL_PATH}
+          CONFLUENCE_AUTH_TYPE=${CONFLUENCE_AUTH_TYPE}
+          
+          # AI Service Configuration
+          GEMINI_API_KEY=${GEMINI_API_KEY}
+          GEMINI_DEFAULT_MODEL=${GEMINI_DEFAULT_MODEL}
+          GEMINI_BASE_PATH=${GEMINI_BASE_PATH}
+          
+          # Figma Configuration
+          FIGMA_API_KEY=${FIGMA_API_KEY}
+          FIGMA_BASE_PATH=${FIGMA_BASE_PATH}
+          
+          # GitHub Authentication
+          GITHUB_TOKEN=${GITHUB_TOKEN}
+          GITHUB_WORKSPACE=${GITHUB_WORKSPACE}
+          GITHUB_BRANCH=${GITHUB_BRANCH}
+          GITHUB_BASE_PATH=${GITHUB_BASE_PATH}
+          
+          # Cursor Configuration
+          CURSOR_API_KEY=${CURSOR_API_KEY}
+          CURSOR_EMAIL=${CURSOR_EMAIL}
+          MODEL=sonnet-4
+          AGENT_DISABLE_WATCHDOG=1
+          
+          # DMTools Integration Settings
+          DMTOOLS_INTEGRATIONS=jira,confluence,figma,ai,cli,file
+          
+          # AI Teammate Configuration
+          AI_TEAMMATE_EMAIL=${AI_TEAMMATE_EMAIL}
+          
+          # Advanced Configuration
+          AI_RETRY_AMOUNT=${AI_RETRY_AMOUNT}
+          AI_RETRY_DELAY_STEP=${AI_RETRY_DELAY_STEP}
+          PROMPT_CHUNK_TOKEN_LIMIT=${PROMPT_CHUNK_TOKEN_LIMIT}
+          PROMPT_CHUNK_MAX_SINGLE_FILE_SIZE_MB=${PROMPT_CHUNK_MAX_SINGLE_FILE_SIZE_MB}
+          PROMPT_CHUNK_MAX_TOTAL_FILES_SIZE_MB=${PROMPT_CHUNK_MAX_TOTAL_FILES_SIZE_MB}
+          PROMPT_CHUNK_MAX_FILES=${PROMPT_CHUNK_MAX_FILES}
+          SLEEP_TIME_REQUEST=${SLEEP_TIME_REQUEST}
+          ENV_TEMPLATE
+          
+          # Export variables for substitution
+          export JIRA_EMAIL="${{ secrets.JIRA_EMAIL }}"
+          export JIRA_API_TOKEN="${{ secrets.JIRA_API_TOKEN }}"
+          export JIRA_BASE_PATH="${{ vars.JIRA_BASE_PATH }}"
+          export JIRA_AUTH_TYPE="${{ vars.JIRA_AUTH_TYPE }}"
+          export JIRA_LOGGING_ENABLED="${{ vars.JIRA_LOGGING_ENABLED || 'false' }}"
+          export JIRA_CLEAR_CACHE="${{ vars.JIRA_CLEAR_CACHE || 'false' }}"
+          
+          export CONFLUENCE_EMAIL="${{ secrets.JIRA_EMAIL }}"
+          export CONFLUENCE_API_TOKEN="${{ secrets.CONFLUENCE_API_TOKEN || secrets.JIRA_API_TOKEN }}"
+          export CONFLUENCE_BASE_PATH="${{ vars.CONFLUENCE_BASE_PATH }}"
+          export CONFLUENCE_DEFAULT_SPACE="${{ vars.CONFLUENCE_DEFAULT_SPACE || '' }}"
+          export CONFLUENCE_GRAPHQL_PATH="${{ vars.CONFLUENCE_GRAPHQL_PATH }}"
+          export CONFLUENCE_AUTH_TYPE="${{ vars.CONFLUENCE_AUTH_TYPE || 'basic' }}"
+          
+          export GEMINI_API_KEY="${{ secrets.GEMINI_API_KEY }}"
+          export GEMINI_DEFAULT_MODEL="${{ vars.GEMINI_DEFAULT_MODEL || 'gemini-2.0-flash-exp' }}"
+          export GEMINI_BASE_PATH="${{ vars.GEMINI_BASE_PATH || 'https://generativelanguage.googleapis.com/v1beta/models' }}"
+          
+          export FIGMA_API_KEY="${{ secrets.FIGMA_API_KEY || secrets.FIGMA_TOKEN }}"
+          export FIGMA_BASE_PATH="${{ vars.FIGMA_BASE_PATH || 'https://api.figma.com' }}"
+          
+          export GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN || secrets.PAT_TOKEN }}"
+          export GITHUB_WORKSPACE="${{ vars.GITHUB_WORKSPACE || 'vospr' }}"
+          export GITHUB_BRANCH="${{ vars.GITHUB_BRANCH || 'main' }}"
+          export GITHUB_BASE_PATH="${{ vars.GITHUB_BASE_PATH || 'https://api.github.com' }}"
+          
+          export CURSOR_API_KEY="${{ secrets.CURSOR_API_KEY }}"
+          export CURSOR_EMAIL="${{ vars.CURSOR_EMAIL || secrets.JIRA_EMAIL }}"
+          
+          export AI_TEAMMATE_EMAIL="${{ vars.AI_TEAMMATE_EMAIL || '' }}"
+          
+          export AI_RETRY_AMOUNT="${{ vars.AI_RETRY_AMOUNT || '3' }}"
+          export AI_RETRY_DELAY_STEP="${{ vars.AI_RETRY_DELAY_STEP || '20000' }}"
+          export PROMPT_CHUNK_TOKEN_LIMIT="${{ vars.PROMPT_CHUNK_TOKEN_LIMIT || '4000' }}"
+          export PROMPT_CHUNK_MAX_SINGLE_FILE_SIZE_MB="${{ vars.PROMPT_CHUNK_MAX_SINGLE_FILE_SIZE_MB || '4' }}"
+          export PROMPT_CHUNK_MAX_TOTAL_FILES_SIZE_MB="${{ vars.PROMPT_CHUNK_MAX_TOTAL_FILES_SIZE_MB || '4' }}"
+          export PROMPT_CHUNK_MAX_FILES="${{ vars.PROMPT_CHUNK_MAX_FILES || '10' }}"
+          export SLEEP_TIME_REQUEST="${{ vars.SLEEP_TIME_REQUEST || '1000' }}"
+          
+          # Use envsubst if available, otherwise sed
+          if command -v envsubst >/dev/null 2>&1; then
+            envsubst < dmtools.env > dmtools.env.tmp
+            mv dmtools.env.tmp dmtools.env
+          else
+            # Fallback to sed (escape special characters)
+            sed -i "s|\${JIRA_EMAIL}|$JIRA_EMAIL|g" dmtools.env
+            sed -i "s|\${JIRA_API_TOKEN}|$JIRA_API_TOKEN|g" dmtools.env
+            sed -i "s|\${JIRA_BASE_PATH}|$JIRA_BASE_PATH|g" dmtools.env
+            sed -i "s|\${JIRA_AUTH_TYPE}|$JIRA_AUTH_TYPE|g" dmtools.env
+            sed -i "s|\${JIRA_LOGGING_ENABLED}|$JIRA_LOGGING_ENABLED|g" dmtools.env
+            sed -i "s|\${JIRA_CLEAR_CACHE}|$JIRA_CLEAR_CACHE|g" dmtools.env
+            sed -i "s|\${CONFLUENCE_EMAIL}|$CONFLUENCE_EMAIL|g" dmtools.env
+            sed -i "s|\${CONFLUENCE_API_TOKEN}|$CONFLUENCE_API_TOKEN|g" dmtools.env
+            sed -i "s|\${CONFLUENCE_BASE_PATH}|$CONFLUENCE_BASE_PATH|g" dmtools.env
+            sed -i "s|\${CONFLUENCE_DEFAULT_SPACE}|$CONFLUENCE_DEFAULT_SPACE|g" dmtools.env
+            sed -i "s|\${CONFLUENCE_GRAPHQL_PATH}|$CONFLUENCE_GRAPHQL_PATH|g" dmtools.env
+            sed -i "s|\${CONFLUENCE_AUTH_TYPE}|$CONFLUENCE_AUTH_TYPE|g" dmtools.env
+            sed -i "s|\${GEMINI_API_KEY}|$GEMINI_API_KEY|g" dmtools.env
+            sed -i "s|\${GEMINI_DEFAULT_MODEL}|$GEMINI_DEFAULT_MODEL|g" dmtools.env
+            sed -i "s|\${GEMINI_BASE_PATH}|$GEMINI_BASE_PATH|g" dmtools.env
+            sed -i "s|\${FIGMA_API_KEY}|$FIGMA_API_KEY|g" dmtools.env
+            sed -i "s|\${FIGMA_BASE_PATH}|$FIGMA_BASE_PATH|g" dmtools.env
+            sed -i "s|\${GITHUB_TOKEN}|$GITHUB_TOKEN|g" dmtools.env
+            sed -i "s|\${GITHUB_WORKSPACE}|$GITHUB_WORKSPACE|g" dmtools.env
+            sed -i "s|\${GITHUB_BRANCH}|$GITHUB_BRANCH|g" dmtools.env
+            sed -i "s|\${GITHUB_BASE_PATH}|$GITHUB_BASE_PATH|g" dmtools.env
+            sed -i "s|\${CURSOR_API_KEY}|$CURSOR_API_KEY|g" dmtools.env
+            sed -i "s|\${CURSOR_EMAIL}|$CURSOR_EMAIL|g" dmtools.env
+            sed -i "s|\${AI_TEAMMATE_EMAIL}|$AI_TEAMMATE_EMAIL|g" dmtools.env
+            sed -i "s|\${AI_RETRY_AMOUNT}|$AI_RETRY_AMOUNT|g" dmtools.env
+            sed -i "s|\${AI_RETRY_DELAY_STEP}|$AI_RETRY_DELAY_STEP|g" dmtools.env
+            sed -i "s|\${PROMPT_CHUNK_TOKEN_LIMIT}|$PROMPT_CHUNK_TOKEN_LIMIT|g" dmtools.env
+            sed -i "s|\${PROMPT_CHUNK_MAX_SINGLE_FILE_SIZE_MB}|$PROMPT_CHUNK_MAX_SINGLE_FILE_SIZE_MB|g" dmtools.env
+            sed -i "s|\${PROMPT_CHUNK_MAX_TOTAL_FILES_SIZE_MB}|$PROMPT_CHUNK_MAX_TOTAL_FILES_SIZE_MB|g" dmtools.env
+            sed -i "s|\${PROMPT_CHUNK_MAX_FILES}|$PROMPT_CHUNK_MAX_FILES|g" dmtools.env
+            sed -i "s|\${SLEEP_TIME_REQUEST}|$SLEEP_TIME_REQUEST|g" dmtools.env
+          fi
+          
+          # Secure the file
+          chmod 600 dmtools.env
+          echo "✅ Created dmtools.env with your credentials"
+          echo "File location: $(pwd)/dmtools.env"
+          echo "First few lines (masked):"
+          head -n 3 dmtools.env | sed 's/=.*/=***/'
+      
+      # Step 7: Copy agent config from your repo if requested
+      - name: Copy Agent Config from Your Repo
+        if: inputs.use_your_agent_config == true
+        run: |
+          CONFIG_FILE="${{ inputs.config_file }}"
+          echo "Copying agent config from your repository: $CONFIG_FILE"
+          
+          if [ -f "your-repo/$CONFIG_FILE" ]; then
+            # Create directory structure if needed
+            mkdir -p "original-repo/$(dirname "$CONFIG_FILE")"
+            cp "your-repo/$CONFIG_FILE" "original-repo/$CONFIG_FILE"
+            echo "✅ Copied agent config to original-repo/$CONFIG_FILE"
+          else
+            echo "❌ Agent config not found in your repo: your-repo/$CONFIG_FILE"
+            exit 1
+          fi
+      
+      # Step 8: Verify Agent Config Exists
+      - name: Verify Agent Config
+        working-directory: original-repo
+        run: |
+          CONFIG_FILE="${{ inputs.config_file }}"
+          if [ -f "$CONFIG_FILE" ]; then
+            echo "✅ Agent config found: $CONFIG_FILE"
+            echo "Config file size: $(wc -l < "$CONFIG_FILE") lines"
+          else
+            echo "❌ Agent config not found: $CONFIG_FILE"
+            echo "Available agent configs:"
+            find agents/ -name "*.json" 2>/dev/null || echo "No agents/ directory found"
+            exit 1
+          fi
+      
+      # Step 9: Run AI Teammate - CRITICAL FIX: working-directory set to original-repo
+      - name: Run AI Teammate
+        working-directory: original-repo
+        env:
+          PATH: "/home/runner/.local/bin:/home/runner/.dmtools/bin:/bin:/usr/bin:$PATH"
+          ENCODED_CONFIG: ${{ inputs.encoded_config }}
+        run: |
+          CONFIG_FILE="${{ inputs.config_file }}"
+          echo "🚀 Running AI Teammate with config: $CONFIG_FILE"
+          echo "Working directory: $(pwd)"
+          echo "dmtools.env location: $(pwd)/dmtools.env"
+          
+          # Verify dmtools can find dmtools.env
+          if [ -f "dmtools.env" ]; then
+            echo "✅ dmtools.env exists in working directory"
+          else
+            echo "❌ dmtools.env not found in working directory"
+            exit 1
+          fi
+          
+          # Verify agent config exists
+          if [ -f "$CONFIG_FILE" ]; then
+            echo "✅ Agent config found: $CONFIG_FILE"
+          else
+            echo "❌ Agent config not found: $CONFIG_FILE"
+            exit 1
+          fi
+          
+          # Run dmtools
+          if [ -n "${ENCODED_CONFIG}" ]; then
+            echo "Encoded config provided"
+            echo "Encoded config length: ${#ENCODED_CONFIG} characters"
+            dmtools run "$CONFIG_FILE" "${ENCODED_CONFIG}"
+          else
+            echo "No encoded config, using defaults from config file"
+            dmtools run "$CONFIG_FILE"
+          fi
