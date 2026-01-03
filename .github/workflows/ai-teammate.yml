@@ -33,9 +33,6 @@ jobs:
       # Step 1: Checkout YOUR repository (for local actions)
       - name: Checkout Your Repository (for local actions)
         uses: actions/checkout@v4
-        with:
-          sparse-checkout: |
-            .github/actions/
       
       # Step 2: Checkout ORIGINAL repository (IstiN/dmtools) - CRITICAL FIX
       - name: Checkout Original Repository
