@@ -102,62 +102,7 @@ jobs:
             exit 1
           fi
       
-      # Step 6.5: Fix Issue Type Name for Jira Sub-tasks
-      - name: Fix Issue Type Name in Post-Processing Script
-        working-directory: original-repo
-        run: |
-          echo "🔧 Fixing issue type name from 'Subtask' to 'Sub-task'..."
-          SCRIPT_PATH="agents/js/createQuestionsAndAssignForReview.js"
-          
-          if [ -f "$SCRIPT_PATH" ]; then
-            echo "📄 Script found: $SCRIPT_PATH"
-            echo "📋 Checking current content (before fix):"
-            grep -n "Subtask\|Sub-task" "$SCRIPT_PATH" | head -5 || echo "No 'Subtask' or 'Sub-task' found"
-            
-            # Replace all variations of "Subtask" with "Sub-task" (with hyphen)
-            # Pattern 1: {"name":"Subtask"} or {"name": "Subtask"} (with or without spaces)
-            sed -i 's/"name"\s*:\s*"Subtask"/"name": "Sub-task"/g' "$SCRIPT_PATH"
-            # Pattern 2: {'name':'Subtask'} or {'name': 'Subtask'} (single quotes)
-            sed -i "s/'name'\\s*:\\s*'Subtask'/'name': 'Sub-task'/g" "$SCRIPT_PATH"
-            # Pattern 3: name: "Subtask" or name:'Subtask' (without quotes around name)
-            sed -i 's/name\s*:\s*"Subtask"/name: "Sub-task"/g' "$SCRIPT_PATH"
-            sed -i "s/name\\s*:\\s*'Subtask'/name: 'Sub-task'/g" "$SCRIPT_PATH"
-            # Pattern 4: issuetype: { name: "Subtask" } (lowercase issuetype, common in JS)
-            sed -i 's/issuetype\s*:\s*{\s*name\s*:\s*"Subtask"/issuetype: { name: "Sub-task"/g' "$SCRIPT_PATH"
-            sed -i "s/issuetype\\s*:\\s*{\\s*name\\s*:\\s*'Subtask'/issuetype: { name: 'Sub-task'/g" "$SCRIPT_PATH"
-            # Pattern 5: Any remaining "Subtask" in issuetype context
-            sed -i 's/issuetype.*"Subtask"/issuetype.*"Sub-task"/g' "$SCRIPT_PATH"
-            sed -i "s/issuetype.*'Subtask'/issuetype.*'Sub-task'/g" "$SCRIPT_PATH"
-            # Pattern 6: Direct string replacement for any remaining instances (fallback)
-            sed -i 's/"Subtask"/"Sub-task"/g' "$SCRIPT_PATH"
-            sed -i "s/'Subtask'/'Sub-task'/g" "$SCRIPT_PATH"
-            
-            echo ""
-            echo "✅ Applied sed replacements"
-            echo "📋 Verifying change (after fix):"
-            if grep -q "Sub-task" "$SCRIPT_PATH"; then
-              echo "✅ Found 'Sub-task' in script:"
-              grep -n "Sub-task" "$SCRIPT_PATH" | head -5
-            else
-              echo "⚠️  No 'Sub-task' found after replacement"
-            fi
-            # Check for remaining "Subtask" (without hyphen)
-            if grep -q '"Subtask"\|'"'"'Subtask'"'"' "$SCRIPT_PATH"; then
-              echo "⚠️  Warning: Still found 'Subtask' (without hyphen):"
-              grep -n '"Subtask"\|'"'"'Subtask'"'"' "$SCRIPT_PATH" | head -5
-            else
-              echo "✅ No 'Subtask' (without hyphen) found - all replaced!"
-            fi
-          else
-            echo "⚠️  Script not found: $SCRIPT_PATH"
-            echo "Current directory: $(pwd)"
-            echo "Available scripts in agents/js/:"
-            ls -la agents/js/*.js 2>/dev/null || echo "No JS files found"
-            echo "Checking if agents/js/ exists:"
-            ls -la agents/js/ 2>/dev/null || echo "agents/js/ directory not found"
-          fi
-      
-      # Step 7: Create dmtools.env from GitHub Secrets - CRITICAL FIX
+      # Step 6: Create dmtools.env from GitHub Secrets - CRITICAL FIX
       - name: Create dmtools.env from Your Secrets
         working-directory: original-repo
         run: |
@@ -304,7 +249,7 @@ jobs:
           echo "First few lines (masked):"
           head -n 3 dmtools.env | sed 's/=.*/=***/'
       
-      # Step 7: Copy agent config from your repo if requested
+      # Step 6.5: Copy agent config from your repo if requested
       - name: Copy Agent Config from Your Repo
         if: inputs.use_your_agent_config == true
         run: |
@@ -336,7 +281,7 @@ jobs:
             exit 1
           fi
       
-      # Step 9: Run AI Teammate - CRITICAL FIX: working-directory set to original-repo
+      # Step 8: Run AI Teammate - CRITICAL FIX: working-directory set to original-repo
       - name: Run AI Teammate
         working-directory: original-repo
         env:
