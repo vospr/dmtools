@@ -30,7 +30,14 @@ jobs:
       cancel-in-progress: false
     
     steps:
-      # Step 1: Checkout ORIGINAL repository (IstiN/dmtools) - CRITICAL FIX
+      # Step 1: Checkout YOUR repository (for local actions)
+      - name: Checkout Your Repository (for local actions)
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: |
+            .github/actions/
+      
+      # Step 2: Checkout ORIGINAL repository (IstiN/dmtools) - CRITICAL FIX
       - name: Checkout Original Repository
         uses: actions/checkout@v4
         with:
@@ -39,8 +46,8 @@ jobs:
           path: original-repo
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      # Step 2: Checkout YOUR repository (for agent configs if needed)
-      - name: Checkout Your Repository
+      # Step 3: Checkout YOUR repository (for agent configs if needed)
+      - name: Checkout Your Repository (for agent configs)
         if: inputs.use_your_agent_config == true
         uses: actions/checkout@v4
         with:
@@ -48,13 +55,13 @@ jobs:
           sparse-checkout: |
             agents/
       
-      # Step 3: Setup Java Environment
+      # Step 4: Setup Java Environment
       - name: Setup Java Environment
         uses: ./.github/actions/setup-java-only
         with:
           cache-key-suffix: '-cursor'
 
-      # Step 4: Install Cursor CLI
+      # Step 5: Install Cursor CLI
       - name: Install Cursor CLI
         run: |
           echo "Installing Cursor CLI..."
@@ -79,7 +86,7 @@ jobs:
             ls -la "$HOME/.local/bin/" 2>/dev/null || echo "Directory does not exist"
           fi
 
-      # Step 5: Install DMTools CLI (from original repo's releases)
+      # Step 6: Install DMTools CLI (from original repo's releases)
       - name: Install DMTools CLI
         working-directory: original-repo
         run: |
@@ -97,7 +104,7 @@ jobs:
             exit 1
           fi
       
-      # Step 6: Create dmtools.env from GitHub Secrets - CRITICAL FIX
+      # Step 7: Create dmtools.env from GitHub Secrets - CRITICAL FIX
       - name: Create dmtools.env from Your Secrets
         working-directory: original-repo
         run: |
@@ -244,7 +251,7 @@ jobs:
           echo "First few lines (masked):"
           head -n 3 dmtools.env | sed 's/=.*/=***/'
       
-      # Step 7: Copy agent config from your repo if requested
+      # Step 8: Copy agent config from your repo if requested
       - name: Copy Agent Config from Your Repo
         if: inputs.use_your_agent_config == true
         run: |
@@ -261,7 +268,7 @@ jobs:
             exit 1
           fi
       
-      # Step 8: Verify Agent Config Exists
+      # Step 9: Verify Agent Config Exists
       - name: Verify Agent Config
         working-directory: original-repo
         run: |
@@ -276,7 +283,7 @@ jobs:
             exit 1
           fi
       
-      # Step 9: Run AI Teammate - CRITICAL FIX: working-directory set to original-repo
+      # Step 10: Run AI Teammate - CRITICAL FIX: working-directory set to original-repo
       - name: Run AI Teammate
         working-directory: original-repo
         env:
