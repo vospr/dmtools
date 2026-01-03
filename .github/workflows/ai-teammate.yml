@@ -122,10 +122,13 @@ jobs:
             # Pattern 3: name: "Subtask" or name:'Subtask' (without quotes around name)
             sed -i 's/name\s*:\s*"Subtask"/name: "Sub-task"/g' "$SCRIPT_PATH"
             sed -i "s/name\\s*:\\s*'Subtask'/name: 'Sub-task'/g" "$SCRIPT_PATH"
-            # Pattern 4: Any remaining "Subtask" in issuetype context
+            # Pattern 4: issuetype: { name: "Subtask" } (lowercase issuetype, common in JS)
+            sed -i 's/issuetype\s*:\s*{\s*name\s*:\s*"Subtask"/issuetype: { name: "Sub-task"/g' "$SCRIPT_PATH"
+            sed -i "s/issuetype\\s*:\\s*{\\s*name\\s*:\\s*'Subtask'/issuetype: { name: 'Sub-task'/g" "$SCRIPT_PATH"
+            # Pattern 5: Any remaining "Subtask" in issuetype context
             sed -i 's/issuetype.*"Subtask"/issuetype.*"Sub-task"/g' "$SCRIPT_PATH"
             sed -i "s/issuetype.*'Subtask'/issuetype.*'Sub-task'/g" "$SCRIPT_PATH"
-            # Pattern 5: Direct string replacement for any remaining instances
+            # Pattern 6: Direct string replacement for any remaining instances (fallback)
             sed -i 's/"Subtask"/"Sub-task"/g' "$SCRIPT_PATH"
             sed -i "s/'Subtask'/'Sub-task'/g" "$SCRIPT_PATH"
             
