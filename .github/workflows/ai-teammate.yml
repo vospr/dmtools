@@ -6,7 +6,7 @@ on:
       config_file:
         description: 'Path to agent config (relative to original repo or your repo)'
         required: true
-        default: 'agents/learning_questions.json'
+        default: 'agents/story_questions.json'
       encoded_config:
         description: 'Base64-encoded JSON with dynamic params (ticket_key, initiator, etc.)'
         required: false
@@ -55,7 +55,7 @@ jobs:
           distribution: 'temurin'
           java-version: '23'
 
-      # Step 5: Install Cursor CLI
+      # Step 4: Install Cursor CLI
       - name: Install Cursor CLI
         run: |
           echo "Installing Cursor CLI..."
@@ -80,7 +80,7 @@ jobs:
             ls -la "$HOME/.local/bin/" 2>/dev/null || echo "Directory does not exist"
           fi
 
-      # Step 6: Install DMTools CLI (from original repo's releases)
+      # Step 5: Install DMTools CLI (from original repo's releases)
       - name: Install DMTools CLI
         working-directory: original-repo
         run: |
@@ -245,7 +245,7 @@ jobs:
           echo "First few lines (masked):"
           head -n 3 dmtools.env | sed 's/=.*/=***/'
       
-      # Step 8: Copy agent config from your repo if requested
+      # Step 7: Copy agent config from your repo if requested
       - name: Copy Agent Config from Your Repo
         if: inputs.use_your_agent_config == true
         run: |
@@ -262,7 +262,7 @@ jobs:
             exit 1
           fi
       
-      # Step 9: Verify Agent Config Exists
+      # Step 8: Verify Agent Config Exists
       - name: Verify Agent Config
         working-directory: original-repo
         run: |
@@ -277,7 +277,7 @@ jobs:
             exit 1
           fi
       
-      # Step 10: Run AI Teammate - CRITICAL FIX: working-directory set to original-repo
+      # Step 9: Run AI Teammate - CRITICAL FIX: working-directory set to original-repo
       - name: Run AI Teammate
         working-directory: original-repo
         env:
