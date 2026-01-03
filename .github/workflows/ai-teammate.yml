@@ -30,11 +30,7 @@ jobs:
       cancel-in-progress: false
     
     steps:
-      # Step 1: Checkout YOUR repository (for local actions)
-      - name: Checkout Your Repository (for local actions)
-        uses: actions/checkout@v4
-      
-      # Step 2: Checkout ORIGINAL repository (IstiN/dmtools) - CRITICAL FIX
+      # Step 1: Checkout ORIGINAL repository (IstiN/dmtools) - CRITICAL FIX
       - name: Checkout Original Repository
         uses: actions/checkout@v4
         with:
@@ -43,7 +39,7 @@ jobs:
           path: original-repo
           token: ${{ secrets.GITHUB_TOKEN }}
       
-      # Step 3: Checkout YOUR repository (for agent configs if needed)
+      # Step 2: Checkout YOUR repository (for agent configs if needed)
       - name: Checkout Your Repository (for agent configs)
         if: inputs.use_your_agent_config == true
         uses: actions/checkout@v4
@@ -52,11 +48,12 @@ jobs:
           sparse-checkout: |
             agents/
       
-      # Step 4: Setup Java Environment
+      # Step 3: Setup Java Environment
       - name: Setup Java Environment
-        uses: ./.github/actions/setup-java-only
+        uses: actions/setup-java@v4
         with:
-          cache-key-suffix: '-cursor'
+          distribution: 'temurin'
+          java-version: '23'
 
       # Step 5: Install Cursor CLI
       - name: Install Cursor CLI
